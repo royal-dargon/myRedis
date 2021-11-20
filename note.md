@@ -33,5 +33,92 @@ strcut sdshdr {
 * 二进制安全 因为有了len这个值于是支持了SDS可以存储二进制的数据。
 * 兼容部分C字符函数 可以使用部分c字符的库函数。
 
+下面是阅读源码的一点收获
+
+###### `sdsnewlen`
+
+```c
+sds sdsnewlen(const void *init, size_t initlen);
+```
+
+第一个参数其实就是传进去的字符串，第二则是类似于字符串的长度
+
+在其中Redis对内存分配的处理方式是使用对init的值是否为空进行区分，如果不为为空就采用，`zmalloc`其中的内容，我也看了一下
+
+[这是我发现的一个感觉讲的还算比较清晰的文章](https://blog.csdn.net/guodongxiaren/article/details/44747719)
+
+在这篇文章里面，我发现这个`zmalloc` 函数实际上是提供了一种自定义内存管理函数处理8字节对齐的设计思路和实现原理。
+
+所谓字长就是CPU一次能读取数据的二进制位数，对齐起到作用主要是可以缩短需要的总线周期
+
+下面是`zmalloc`
+
+```c
+void *ptr = malloc(size+PREFIX_sIZE);
+```
+
+其中size是我们需要分配的内存大小，多分配的八个是用来存储size的值。
+
+如果分配失败就进行错误打印并且终止程序
+
+下面就是宏的条件编译
+
+其中的`update_zmalloc_stat_alloc` 则是提供了一个向右对齐的作用，让内存分配变成8的倍数。里面的位操作有点奇特。
+
+下面就是一些基本的初始化的工作，我想我应该是看懂了
+
+###### `sdsnew()`
+
+这里面就是传参的时候没有传入长度，然后在函数内部进行处理，最后的出传入参数的长度，然后再返回的时候再次调用`sdsnewlen()`
+
+###### `sdslen`
+
+在这个函数中，传入的是一个指向sdshdr的指针，这是我们获取长度，就需要减去一个struct的长度，的到sdshdr结构体，然后获取len。可以类推的是free的获取方式，也是如此。
+
 #### 链表
+
+##### 链表的组成
+
+```c
+typedef struct listNode {
+
+    // 前置节点
+    struct listNode *prev;
+
+    // 后置节点
+    struct listNode *next;
+
+    // 节点的值
+    void *value;
+
+} listNode;
+
+typedef struct list {
+
+    // 表头节点
+    listNode *head;
+
+    // 表尾节点
+    listNode *tail;
+
+    // 链表所包含的节点数量
+    unsigned long len;
+
+    // 节点值复制函数
+    void *(*dup)(void *ptr);
+
+    // 节点值释放函数
+    void (*free)(void *ptr);
+
+    // 节点值对比函数
+    int (*match)(void *ptr, void *key);
+
+} list;
+```
+
+* 双端：获取前置节点和后置节点的时间复杂度降低
+* 无环：表头节点的prev和表尾节点的next都是为NULL
+* 带表头指针和表尾指针
+* 带链表长度计数器
+* 多态
 
